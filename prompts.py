@@ -1,49 +1,66 @@
-LLM_PROMPT_TEMPLATE = """
-You are an expert in DOM understanding and web form automation.
+# prompts.py
 
-Goal:
-Return a JSON array describing how to fill the given form using the provided mock data.
+# Step 1: Best guess + second best guess for each editable field
+LLM_PROMPT_BEST_GUESS = """
+You are an expert form-filling AI.
 
-Strict rules:
-- ONLY include fields that exist in the given form HTML.
-- NEVER invent or hallucinate fields.
-- If a field is in data_json but NOT in the form → ignore it, but be reasonable.
-- If the form has fields not in data_json → ignore them., but be reasonable.
-- We want to fill all what we can, but clearly unrelated fields should be skipped.
-- Always first attempt selecting by a unique ID selector (#elementID).
-- If no ID exists, then use the best available CSS selector based on:
-  * name attribute
-  * label text binding
-  * input[type]
-- Detect correct action automatically:
-  * text, email, number, date, textarea → "fill"
-  * select dropdown → "select"
-  * checkbox or radio → "check"
-  * button type="submit" → "click"
-- Include `label_hint` ONLY if useful for fallback matching.
-- NEVER use complex nth-child selectors unless unavoidable.
-- MUST always return well-formed JSON ONLY.
-- NO explanations, no markdown.
+Given the following HTML snippet of a form element:
 
-JSON Schema:
+{element_html}
+
+Consider the attributes:
+- Text right before the element (label, placeholder, etc.)
+- ID
+- Class / CSS selectors
+- Name
+
+You also have access to the following JSON data for possible values:
+{data_json}
+
+Your task:
+1. Identify the most likely data field from the JSON that matches this element, and give it a confidence score from 1-5.
+2. Identify a second-best guess, if any, also with score 1-5.
+3. Give reasoning for both guesses.
+
+Return JSON with the following format:
 [
   {{
-    "key": "<data key>",
-    "selector": "<CSS selector>",
-    "action": "fill | select | check | click",
-    "value": <insert correct data value>,
-    "label_hint": "<visible label text or ''>"
+    "element_selector": "{element_selector}",
+    "best_guess": {{"key": "attorney.first_name", "value": "John", "score": 5, "reasoning": "..."}},
+    "second_guess": {{"key": "attorney.middle_name", "value": "Michael", "score": 3, "reasoning": "..."}}
   }}
 ]
+"""
 
-Input:
-FORM_HTML:
-{{form_html}}
+# Step 2: Resolve conflicts (same JSON field mapped to multiple elements)
+LLM_PROMPT_RESOLVE_CONFLICTS = """
+You are an expert form-filling AI.
 
-DATA_JSON:
-{{data_json}}
+Given the following list of element-to-data-field assignments:
 
-Output:
-Strict valid JSON array only, nothing else.
+{assignments_json}
+
+Some JSON fields may have been assigned to multiple elements. Resolve conflicts using:
+- Choose the element with the highest confidence score.
+- If tied, prefer shorter distance between label and value in text/HTML.
+- Remove low-confidence matches (score <= 2) if necessary.
+
+Return a cleaned JSON list with the same format.
+"""
+
+# Step 3: Evaluate final assignments
+LLM_PROMPT_EVALUATE_FINAL = """
+You are an expert form-filling AI.
+
+Given the following final element-to-data-field assignments:
+
+{assignments_json}
+
+Evaluate each assignment:
+- If confidence seems too low (<= 2) or mismatched, remove it.
+- Do not hallucinate values.
+- Keep only likely correct mappings.
+
+Return the cleaned JSON list ready for filling.
 """
 
