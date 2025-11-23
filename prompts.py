@@ -1,66 +1,76 @@
 # prompts.py
 
-# Step 1: Best guess + second best guess for each editable field
+# Single LLM call for ALL elements
 LLM_PROMPT_BEST_GUESS = """
-You are an expert form-filling AI.
+You are an expert form-filling AI. Analyze ALL form elements at once and map them to the provided data.
 
-Given the following HTML snippet of a form element:
+FORM ELEMENTS:
+{elements_json}
 
-{element_html}
-
-Consider the attributes:
-- Text right before the element (label, placeholder, etc.)
-- ID
-- Class / CSS selectors
-- Name
-
-You also have access to the following JSON data for possible values:
+AVAILABLE DATA:
 {data_json}
 
 Your task:
-1. Identify the most likely data field from the JSON that matches this element, and give it a confidence score from 1-5.
-2. Identify a second-best guess, if any, also with score 1-5.
-3. Give reasoning for both guesses.
+1. For EACH element, identify the most likely data field match
+2. Provide a confidence score (1-5) for each match
+3. Include reasoning for your choices
+4. Consider: labels, placeholders, names, IDs, surrounding text, and field types
 
-Return JSON with the following format:
+Return JSON array with this format for ALL elements:
 [
   {{
-    "element_selector": "{element_selector}",
-    "best_guess": {{"key": "attorney.first_name", "value": "John", "score": 5, "reasoning": "..."}},
-    "second_guess": {{"key": "attorney.middle_name", "value": "Michael", "score": 3, "reasoning": "..."}}
-  }}
+    "element_id": 0,
+    "best_guess": {{
+      "key": "attorney.first_name", 
+      "value": "John", 
+      "score": 5, 
+      "reasoning": "Label matches 'First Name' and data has attorney.first_name"
+    }},
+    "second_guess": {{
+      "key": "client.first_name", 
+      "value": "Jane", 
+      "score": 3, 
+      "reasoning": "Alternative match but attorney context is stronger"
+    }}
+  }},
+  ... // more elements
 ]
+
+Important: Return ONLY the JSON array, no other text.
 """
 
-# Step 2: Resolve conflicts (same JSON field mapped to multiple elements)
+# Single LLM call for ALL conflict resolution
 LLM_PROMPT_RESOLVE_CONFLICTS = """
-You are an expert form-filling AI.
+You are an expert form-filling AI. Resolve ALL field assignment conflicts at once.
 
-Given the following list of element-to-data-field assignments:
-
+CURRENT ASSIGNMENTS:
 {assignments_json}
 
-Some JSON fields may have been assigned to multiple elements. Resolve conflicts using:
-- Choose the element with the highest confidence score.
-- If tied, prefer shorter distance between label and value in text/HTML.
-- Remove low-confidence matches (score <= 2) if necessary.
+Conflict Resolution Rules:
+1. If a data field is assigned to multiple elements, keep ONLY the highest confidence match
+2. Remove assignments with confidence score <= 2
+3. Prefer matches where field purpose clearly aligns with data semantics
+4. Ensure each data field is used at most once (unless the form has duplicate fields)
 
-Return a cleaned JSON list with the same format.
+Return the cleaned JSON array with the same format, containing only the best assignments.
+
+Important: Return ONLY the JSON array, no other text.
 """
 
-# Step 3: Evaluate final assignments
+# Single LLM call for ALL final evaluation
 LLM_PROMPT_EVALUATE_FINAL = """
-You are an expert form-filling AI.
+You are an expert form-filling AI. Perform final quality check on ALL assignments.
 
-Given the following final element-to-data-field assignments:
-
+ASSIGNMENTS:
 {assignments_json}
 
-Evaluate each assignment:
-- If confidence seems too low (<= 2) or mismatched, remove it.
-- Do not hallucinate values.
-- Keep only likely correct mappings.
+Evaluation Criteria:
+1. Remove any assignment with confidence score <= 2
+2. Remove assignments where the value doesn't match the field type (e.g., email in phone field)
+3. Ensure no critical data fields are missing if obvious matches exist
+4. Keep only assignments that make logical sense
 
-Return the cleaned JSON list ready for filling.
+Return the final JSON array ready for form filling.
+
+Important: Return ONLY the JSON array, no other text.
 """
-
